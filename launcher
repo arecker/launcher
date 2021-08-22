@@ -28,6 +28,18 @@ config = configparser.ConfigParser()
 Job = collections.namedtuple('Job', 'key directory command env')
 
 
+class Task:
+    def __init__(self, config):
+        self.config = config
+
+    def __repr__(self):
+        return '<Task {}>'.format(self.name)
+
+    @property
+    def name(self):
+        return self.config['name']
+
+
 def parse_path(value, base=None):
     if value.startswith('../') or value.startswith('./'):
         return (base / value).absolute()
