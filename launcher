@@ -2,9 +2,10 @@
 import argparse
 import collections
 import configparser
-import json
 import logging
 import os
+import pathlib
+import re
 import subprocess
 import sys
 
@@ -27,18 +28,27 @@ config = configparser.ConfigParser()
 Job = collections.namedtuple('Job', 'key directory command env')
 
 
-def configured_jobs():
+def parse_path(value, base=None):
+    if value.startswith('../') or value.startswith('./'):
+        return (base / value).absolute()
+    return pathlib.Path(os.path.expanduser(value)).absolute()
+
+
+def configured_jobs(base_dir):
     for section in config.sections():
         kwargs = {}
         info = config[section]
         kwargs['command'] = os.path.expandvars(info['command']).split(' ')
-        kwargs['directory'] = os.path.expanduser(info['directory'])
+        kwargs['directory'] = parse_path(info['directory'], base=base_dir)
 
-        try:
-            with open(os.path.expanduser(info['environment'])) as f:
-                kwargs['env'] = json.load(f)
-        except KeyError:
-            kwargs['env'] = {}
+        if 'envfile' in info.keys():
+            envfile_pattern = re.compile(
+                r'^(?P<key>.*?)=[\'\"]?(?P<value>.*?)[\'\"]?$')
+            envfile_target = parse_path(value=info['envfile'], base=base_dir)
+            with open(envfile_target) as f:
+                kwargs['env'] = dict(envfile_pattern.findall(f.read()))
+                logger.debug('loaded %d key(s) from %s',
+                             len(kwargs['env'].keys()), envfile_target)
 
         yield Job(key=section, **kwargs)
 
@@ -54,14 +64,17 @@ def main():
     config.read(args.config)
     logger.debug('loaded config from %s', args.config)
 
+    base_dir = pathlib.Path(args.config).parent
+
     children = []
-    for job in configured_jobs():
+    for job in configured_jobs(base_dir=base_dir):
         process = subprocess.Popen(job.command,
                                    cwd=job.directory,
                                    env=job.env,
-                                   stderr=subprocess.DEVNULL,
-                                   stdout=subprocess.DEVNULL,
-                                   stdin=subprocess.DEVNULL)
+                                   encoding='UTF-8',
+                                   text=True,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
         children.append(process)
         logger.info('launched child %d for job %s', process.pid, job)
 
@@ -69,6 +82,10 @@ def main():
     try:
         for child in children:
             child.wait()
+            logger.info('process %s stopped, returning %d', child.pid,
+                        child.returncode)
+            logger.debug('\n--- stdout\n%s\n--- stderr\n%s\n---',
+                         child.stdout.read(), child.stderr.read())
     except (InterruptedError, KeyboardInterrupt):
         logger.info('parent process interrupted')
     finally:
