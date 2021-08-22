@@ -66,8 +66,15 @@ def main():
         logger.info('launched child %d for job %s', process.pid, job)
 
     logger.info('waiting for jobs to be complete...')
-    for child in children:
-        child.wait()
+    try:
+        for child in children:
+            child.wait()
+    except (InterruptedError, KeyboardInterrupt):
+        logger.info('parent process interrupted')
+    finally:
+        for child in children:
+            child.kill()
+            logger.debug('killed process %s (pid %d)', child, child.pid)
 
 
 if __name__ == '__main__':
