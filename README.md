@@ -46,3 +46,11 @@ environment file.  The file should look something like this:
     MY_FAVORITE_NUMBER="1"
 
 Of course quotes are optional, but how lazy can you be?
+
+## Examples
+
+Take it for a spin using the provided examples.
+
+```bash
+./launcher --config examples/launcher.conf
+```
